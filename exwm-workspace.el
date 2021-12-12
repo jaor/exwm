@@ -28,6 +28,7 @@
 (require 'server)
 
 (require 'exwm-core)
+(require 'xcb-renderutil)
 
 (defgroup exwm-workspace nil
   "Workspace."
@@ -143,6 +144,9 @@ Please manually run the hook `exwm-workspace-list-change-hook' afterwards.")
 (defvar exwm-input--event-hook)
 (defvar exwm-layout-show-all-buffers)
 (defvar exwm-manage--desktop)
+(defvar exwm-workspace--depth)
+(defvar exwm-workspace--visual)
+(defvar exwm-workspace--colormap)
 (declare-function exwm-input--on-buffer-list-update "exwm-input.el" ())
 (declare-function exwm-layout--fullscreen-p "exwm-layout.el" ())
 (declare-function exwm-layout--hide "exwm-layout.el" (id))
@@ -1342,7 +1346,7 @@ Please check `exwm-workspace--minibuffer-own-frame-p' first."
         (set-frame-parameter frame param (frame-parameter w param))))
     (xcb:+request exwm--connection
         (make-instance 'xcb:CreateWindow
-                       :depth 0
+                       :depth exwm-workspace--depth
                        :wid container
                        :parent exwm--root
                        :x -1
@@ -1351,11 +1355,15 @@ Please check `exwm-workspace--minibuffer-own-frame-p' first."
                        :height 1
                        :border-width 0
                        :class xcb:WindowClass:InputOutput
-                       :visual 0
+                       :visual exwm-workspace--visual
                        :value-mask (logior xcb:CW:BackPixmap
+                                           xcb:CW:BorderPixel
+                                           xcb:CW:Colormap
                                            xcb:CW:OverrideRedirect)
-                       :background-pixmap xcb:BackPixmap:ParentRelative
-                       :override-redirect 1))
+                       :background-pixmap xcb:BackPixmap:None
+                       :border-pixel 0
+                       :override-redirect 1
+                       :colormap exwm-workspace--colormap))
     (xcb:+request exwm--connection
         (make-instance 'xcb:ConfigureWindow
                        :window container
@@ -1680,6 +1688,23 @@ applied to all subsequently created X frames."
     (dotimes (_ (- exwm-workspace-number (length initial-workspaces)))
       (nconc initial-workspaces (list (make-frame '((window-system . x)
                                                     (client . nil))))))
+    ;; Find visual, allocate colormap
+    (let* ((formats (xcb:renderutil:query-formats exwm--connection))
+           (visual (catch 'return
+                     (dolist (s (slot-value formats 'screens))
+                       (dolist (d (slot-value s 'depths))
+                         (when (= (slot-value d 'depth) 32)
+                           (throw 'return (slot-value (car (slot-value d 'visuals)) 'visual)))))))
+           (colormap (xcb:generate-id exwm--connection)))
+      (xcb:+request exwm--connection
+          (make-instance 'xcb:CreateColormap
+                         :alloc xcb:ColormapAlloc:None
+                         :mid colormap
+                         :window exwm--root
+                         :visual visual))
+      (setq exwm-workspace--depth 32)
+      (setq exwm-workspace--visual visual)
+      (setq exwm-workspace--colormap colormap))
     ;; Configure workspaces
     (let ((exwm-workspace--create-silently t))
       (dolist (i initial-workspaces)
