@@ -1,7 +1,7 @@
 ;;; exwm-systemtray.el --- System Tray Module for  -*- lexical-binding: t -*-
 ;;;                        EXWM
 
-;; Copyright (C) 2016-2021 Free Software Foundation, Inc.
+;; Copyright (C) 2016-2022 Free Software Foundation, Inc.
 
 ;; Author: Chris Feng <chris.w.feng@gmail.com>
 
@@ -87,9 +87,10 @@ This should be a color, or nil for transparent background."
                                 :window exwm-systemtray--embedder-window
                                 :value-mask (logior xcb:CW:BackPixmap
                                                     (if background-pixel
-                                                        xcb:CW:BackPixel 0))
-                                :background-pixmap
-                                xcb:BackPixmap:ParentRelative
+                                                        xcb:CW:BackPixel 0)
+                                                    xcb:CW:Colormap)
+                                :background-pixmap xcb:BackPixmap:None
+                                :colormap exwm-workspace--colormap
                                 :background-pixel background-pixel))
              ;; Unmap & map to take effect immediately.
              (xcb:+request exwm--connection
@@ -136,6 +137,12 @@ This should be a color, or nil for transparent background."
           (make-instance 'xcb:ChangeSaveSet
                          :mode xcb:SetMode:Insert
                          :window icon))
+      ;; Set colormap
+      (xcb:+request exwm-systemtray--connection
+          (make-instance 'xcb:ChangeWindowAttributes
+                         :window icon
+                         :value-mask xcb:CW:Colormap
+                         :colormap exwm-workspace--colormap))
       ;; Reparent to the embedder.
       (xcb:+request exwm-systemtray--connection
           (make-instance 'xcb:ReparentWindow
@@ -504,12 +511,14 @@ This should be a color, or nil for transparent background."
                        :height exwm-systemtray-height
                        :border-width 0
                        :class xcb:WindowClass:InputOutput
-                       :visual 0
+                       :visual exwm-workspace--visual
+                       :colormap exwm-workspace--colormap
                        :value-mask (logior xcb:CW:BackPixmap
+                                           xcb:CW:Colormap
                                            (if background-pixel
                                                xcb:CW:BackPixel 0)
                                            xcb:CW:EventMask)
-                       :background-pixmap xcb:BackPixmap:ParentRelative
+                       :background-pixmap xcb:BackPixmap:None
                        :background-pixel background-pixel
                        :event-mask xcb:EventMask:SubstructureNotify))
     ;; Set _NET_WM_NAME.
